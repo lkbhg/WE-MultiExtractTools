@@ -13,7 +13,7 @@ def sanitize_file_name(name):
     max_length = 63
 
     # 删除 Windows 禁止的字符
-    name = re.sub(r'[\/:*?"<>|&]', "_", name)
+    name = re.sub(r'[\\/:*?"<>|&]', "_", name)
 
     # 删除控制字符（ASCII 0-31）
     name = re.sub(r"[\x00-\x1F]", "", name)
@@ -82,7 +82,12 @@ def get_folder_title(source_path, folder_name):
     if proj_json_path.exists():
         with open(proj_json_path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        title = f"{data['title']}_{folder_name}"
+            raw_title = data.get("title", "").strip()
+            raw_title=sanitize_file_name(raw_title)
+        if not raw_title:
+            title = folder_name
+        else:
+            title = f"{raw_title}_{folder_name}"
     else:
         title = folder_name
 
@@ -210,22 +215,31 @@ def process_folders():
 
     # 使用 ThreadPoolExecutor 来并行处理每个文件夹
     futures = []
-    with ThreadPoolExecutor() as executor:
-        for folder in tqdm(folder_names, desc="Processing", ncols=200, unit="folder"):
-            futures.append(
-                executor.submit(
-                    process_folder, folder, base_path, repkg_exe, output_base
-                )
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures=[
+            executor.submit(
+                process_folder, folder, base_path, repkg_exe, output_base
             )
+            for folder in folder_names
+        ]
 
+        for future in tqdm(
+            as_completed(futures),
+            total=len(folder_names),
+            desc="Processing",
+            unit="folder",
+            ncols=180,
+        ):
+            future.result()  # 等待任务完成
+            
         # # 等待所有任务完成
         # total_file_count = 0
         # for future in as_completed(futures):
         #     total_file_count += future.result()  # 获取每个任务的返回值
 
         # 等待所有任务完成
-        for future in futures:
-            future.result()  # 等待任务完成
+        # for future in futures:
+        #     future.result()  # 等待任务完成
 
         # 获取并打印线程池中分配的线程数量
         print(
